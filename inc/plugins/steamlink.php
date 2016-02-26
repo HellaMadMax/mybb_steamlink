@@ -56,6 +56,14 @@ function steamlink_activate() {
 		"member_profile", "#".preg_quote('{$signature}')."#i",
 		'{$steamlink_profile_block}{$signature}'
 	);
+	find_replace_templatesets(
+		"postbit", "#".preg_quote('<div class="author_statistics">')."#i",
+		'{$post[\'steamlink\']}<div class="author_statistics">'
+	);
+	find_replace_templatesets(
+		"postbit_classic", "#".preg_quote('<div class="author_statistics">')."#i",
+		'{$post[\'steamlink\']}<div class="author_statistics">'
+	);
 	$template = ' OR <a href="{$mybb->settings[\'bburl\']}/member.php?action=login&steam=1">
 	<img src="https://steamcommunity-a.akamaihd.net/public/images/signinthroughsteam/sits_small.png" style="vertical-align: middle">
 </a>';
@@ -105,7 +113,7 @@ function steamlink_activate() {
 		</td>
 		<td class="trow1">
 			<div class="steam_badge">
-				<a href="https://steamcommunity.com/profiles/{$memprofile[\'steamid\']}" target="_blank"><img width="300" height="80" src="https://steamsignature.com/profile/english/{$memprofile[\'steamid\']}.png"></a>
+				<a href="https://steamcommunity.com/profiles/{$memprofile[\'steamid\']}" target="_blank"><img src="https://steamsignature.com/profile/english/{$memprofile[\'steamid\']}.png"></a>
 			</div>
 		</td>
 	</tr>
@@ -135,6 +143,16 @@ function steamlink_activate() {
 		"sid" => "-1"
 	);
 	$db->insert_query( "templates", $plugin_templates );
+	
+	$template = '<div class="steam_badge">
+	<a href="https://steamcommunity.com/profiles/{$post[\'steamid\']}" target="_blank"><img src="https://steamsignature.com/profile/english/{$post[\'steamid\']}.png"></a>
+</div>';
+	$plugin_templates = array(
+		"title" => "steamlink_postbit",
+		"template" => $db->escape_string( $template ),
+		"sid" => "-1"
+	);
+	$db->insert_query( "templates", $plugin_templates );
 }
 
 function steamlink_deactivate() {
@@ -155,12 +173,22 @@ function steamlink_deactivate() {
 		"#".preg_quote('{$steamlink_profile_block}')."#i",
 		""
 	);
+	find_replace_templatesets(
+		"postbit",
+		"#".preg_quote('{$post[\'steamlink\']}')."#i",
+		""
+	);
+	find_replace_templatesets(
+		"postbit_classic",
+		"#".preg_quote('{$post[\'steamlink\']}')."#i",
+		""
+	);
 	$db->delete_query( "templates", "title LIKE 'steamlink_%' AND sid='-1'" );
 }
 
 $plugins->add_hook( "global_start", "steamlink_templates" );
 function steamlink_templates() {
-	global $db, $mybb, $templatelist;
+	global $db, $mybb, $templates, $templatelist;
 	$templatelist .= ",steamlink_header_login";
 	if ( THIS_SCRIPT === "member.php" ) {
 		$templatelist .= ",steamlink_register";
@@ -171,6 +199,29 @@ $plugins->add_hook( "global_intermediate", "steamlink_login_btn" );
 function steamlink_login_btn() {
 	global $db, $mybb, $templates, $theme, $steamlink_header_login;
 	eval( "\$steamlink_header_login = \"".$templates->get("steamlink_header_login")."\";" );
+}
+
+$plugins->add_hook( "global_end", "steamlink_css" );
+function steamlink_css() {
+	global $db, $mybb, $headerinclude;
+	$headerinclude .= "<style>
+.steam_badge {
+	border-radius: 4px;
+} .steam_badge img {
+	max-height: 66px;
+}
+
+.post:not( .classic ) .steam_badge {
+	float: left;
+} .post.classic .steam_badge {
+	margin-top: 4px;
+	overflow: hidden;
+} .post.classic .steam_badge img {
+	max-width: none;
+	max-height: none;
+	height: 66px;
+}
+</style>";
 }
 
 $plugins->add_hook( "global_end", "steamlink_forcelink" );
@@ -288,4 +339,15 @@ function steamlink_user_profile() {
 		$template = "steamlink_profile_block_linked";
 	}
 	eval( "\$steamlink_profile_block = \"".$templates->get($template)."\";" );
+}
+
+$plugins->add_hook( "postbit", "steamlink_postbit" );
+$plugins->add_hook( "postbit_prev", "steamlink_postbit" );
+$plugins->add_hook( "postbit_pm", "steamlink_postbit" );
+$plugins->add_hook( "postbit_announcement", "steamlink_postbit" );
+function steamlink_postbit( &$post ) {
+	global $db, $mybb, $templates;
+	if ( $post["steamid"] ) {
+		eval("\$post['steamlink'] = \"".$templates->get("steamlink_postbit")."\";");
+	}
 }
