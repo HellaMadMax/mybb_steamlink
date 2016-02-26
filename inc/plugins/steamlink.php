@@ -239,12 +239,12 @@ function steamlink_forcelink() {
 $plugins->add_hook( "member_register_agreement", "steamlink_register_redirect" );
 function steamlink_register_redirect() {
 	global $db, $mybb;
-	$steamid = $db->fetch_array( $db->simple_select("sessions", "steamid", "sid = '".$mybb->session->sid."'") )["steamid"];
-	if ( !$steamid ) {
-		header( "Location: member.php?action=login&steam=1&register=1" );
-		exit;
+	$result = $db->fetch_array( $db->simple_select("sessions", "steamid", "sid = '".$mybb->session->sid."'") );
+	if ( $result and $result["steamid"] ) {
+		return $result["steamid"];
 	}
-	return $steamid;
+	header( "Location: member.php?action=login&steam=1&register=1" );
+	exit;
 }
 
 $plugins->add_hook( "member_login", "steamlink_login" );
@@ -308,13 +308,13 @@ $plugins->add_hook( "datahandler_user_insert", "steamlink_user_insert" );
 function steamlink_user_insert( &$dh ) {
 	global $db, $mybb;
 	if ( !defined("IN_ADMINCP") ) {
-		$steamid = $db->fetch_array( $db->simple_select("sessions", "steamid", "sid = '".$mybb->session->sid."'") )["steamid"];
-		if ( !isset($steamid) ) {
+		$result = $db->fetch_array( $db->simple_select("sessions", "steamid", "sid = '".$mybb->session->sid."'") );
+		if ( $result and $result["steamid"] ) {
+			$dh->user_insert_data["steamid"] = $result["steamid"];
+			$db->update_query( "sessions", array("steamid" => NULL), "sid = '".$mybb->session->sid."'" );
+		} else {
 			error( "No SteamID found in session, please restart the registration process" );
-			return;
 		}
-		$dh->user_insert_data["steamid"] = $steamid;
-		$db->update_query( "sessions", array("steamid" => NULL), "sid = '".$mybb->session->sid."'" );
 	}
 }
 
