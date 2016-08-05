@@ -77,6 +77,9 @@ function steamlink_activate() {
 	<a href="{$mybb->settings[\'bburl\']}/member.php?action=register&steam=1"><img src="https://steamcommunity-a.akamaihd.net/public/images/signinthroughsteam/sits_small.png" style="vertical-align: middle"></a>
 </td></tr>',
 
+"linkrequired" =>
+'<div class="red_alert">{$lang->steam_linkrequired}</div>',
+
 "profileblock_linked" =>
 '<table border="0" cellspacing="{$theme[\'borderwidth\']}" cellpadding="{$theme[\'tablespace\']}" class="tborder tfixed">
 	<colgroup>
@@ -240,6 +243,10 @@ function steamlink_activate() {
 		'{$steamlink_register}{$passboxes}'
 	);
 	find_replace_templatesets(
+		"header", "#".preg_quote('<navigation>')."#i",
+		'{$steamlink_linkrequired}<navigation>'
+	);
+	find_replace_templatesets(
 		"member_profile", "#".preg_quote('{$signature}')."#i",
 		'{$steamlink_profileblock}{$signature}'
 	);
@@ -272,6 +279,11 @@ function steamlink_deactivate() {
 		""
 	);
 	find_replace_templatesets(
+		"header",
+		"#".preg_quote('{$steamlink_linkrequired}')."#i",
+		""
+	);
+	find_replace_templatesets(
 		"member_profile",
 		"#".preg_quote('{$steamlink_profileblock}')."#i",
 		""
@@ -301,9 +313,12 @@ function steamlink_deactivate() {
 
 $plugins->add_hook( "global_start", "steamlink_global" );
 function steamlink_global() {
-	global $db, $mybb, $settings, $lang, $templates, $theme, $templatelist, $fromreg, $steamlink_headerlogin;
+	global $db, $mybb, $settings, $lang, $templates, $theme, $templatelist, $fromreg, $steamlink_headerlogin, $steamlink_linkrequired;
 	$lang->load( "steamlink" );
-	$templatelist .= ",steamlink_headerlogin";
+    if ( isset($templatelist) ) {
+        $templatelist .= ",";
+    }
+	$templatelist .= "steamlink_headerlogin,steamlink_linkrequired";
 	$templatearray = explode( ",", $templatelist );
 	if ( in_array("member_register", $templatearray) ) {
 		$templatelist .= ",steamlink_register_linked,steamlink_register_unlinked";
@@ -321,6 +336,14 @@ function steamlink_global() {
 		$mybb->request_method = "post";
 		$fromreg = 1;
 	}
+	if ( $mybb->user["uid"] and !$mybb->user["steamid"] and $settings["steamlink_exforcelink"] ) {
+		if ( (THIS_SCRIPT != "member.php" or !in_array($mybb->input["action"], ["login", "do_login", "logout"])) and !$mybb->usergroup["cancp"] ) {
+			header( "Location: member.php?action=login" );
+			exit;
+		} else {
+			eval( "\$steamlink_linkrequired = \"".$templates->get("steamlink_linkrequired")."\";" );
+		}
+	}
 }
 
 $plugins->add_hook( "member_register_start", "steamlink_register" );
@@ -333,16 +356,16 @@ function steamlink_register() {
 			$steamid = substr( $openid->identity, strlen("http://steamcommunity.com/openid/id/") );
 			$user = $db->fetch_array( $db->simple_select("users", "*", "steamid='".$steamid."'") );
 			if ( $user ) {
-				$errors[] = $lang->sprintf( $lang->steamlink_regalreadylinked, build_profile_link(format_name($user["username"], $user["usergroup"], $user["displaygroup"]), $user["uid"]) );
+				$errors[] = $lang->sprintf( $lang->steam_regexists, build_profile_link(format_name($user["username"], $user["usergroup"], $user["displaygroup"]), $user["uid"]) );
 			} else {
 				$db->update_query( "sessions", array("steamid" => $steamid), "sid='".$mybb->session->sid."'" );
-				redirect( "member.php?action=register", $lang->steamlink_authenticated_register );
+				redirect( "member.php?action=register", $lang->steam_regauthed );
 			}
 		} elseif ( $validate === false ) {
-			$errors[] = $lang->steamlink_openidfail;
+			$errors[] = $lang->steam_authfail;
 		} else {
 			$openid->identity = "http://steamcommunity.com/openid";
-			redirect( $openid->authUrl(), $lang->steamlink_openidredirect );
+			redirect( $openid->authUrl(), $lang->steam_redirect );
 		}
 		unset( $steamid );
 	}
@@ -353,6 +376,28 @@ function steamlink_register() {
 	eval( "\$steamlink_register = \"".$templates->get("steamlink_register_".($steamid32 ? "linked" : "unlinked"))."\";" );
 	if ( $errors ) {
 		$regerrors = inline_error( $errors );
+	}
+}
+
+$plugins->add_hook( "datahandler_user_validate", "steamlink_user_validate" );
+function steamlink_user_validate( &$dh ) {
+	global $db, $mybb, $settings, $lang, $templates, $theme;
+	if ( THIS_SCRIPT === "member.php" ) {
+		$steamid = $db->fetch_field( $db->simple_select("sessions", "steamid", "sid = '".$mybb->session->sid."'"), "steamid" );
+		if ( $steamid ) {
+			$dh->data["steamid"] = $steamid;
+		} elseif ( $settings["steamlink_regforcelink"] ) {
+			$dh->set_error( $lang->steam_linkrequired );
+		}
+	}
+}
+
+$plugins->add_hook( "datahandler_user_insert", "steamlink_user_insert" );
+function steamlink_user_insert( &$dh ) {
+	global $db, $mybb, $settings, $lang, $templates, $theme;
+	if ( $dh->data["steamid"] ) {
+		$dh->user_insert_data["steamid"] = $dh->data["steamid"];
+		$db->update_query( "sessions", array("steamid" => NULL), "sid = '".$mybb->session->sid."'" );
 	}
 }
 
@@ -367,12 +412,16 @@ function steamlink_login() {
 			$user = $db->fetch_array( $db->simple_select("users", "*", "steamid='".$steamid."'") );
 			if ( $mybb->user["uid"] !== 0 and !$mybb->user["steamid"] ) {
 				if ( $user ) {
-					$errors[] = $lang->sprintf( $lang->steamlink_exalreadylinked, build_profile_link(format_name($user["username"], $user["usergroup"], $user["displaygroup"]), $user["uid"]) );
+					$errors[] = $lang->sprintf( $lang->steam_linkexists, build_profile_link(format_name($user["username"], $user["usergroup"], $user["displaygroup"]), $user["uid"]) );
 				} else {
 					$db->update_query( "users", array("steamid" => $steamid), "uid='".$mybb->user["uid"]."'" );
 					redirect( "index.php", $lang->steamlink_authenticated );
 				}
-			} elseif ( $user and $settings["steamlink_allowlogin"] ) {
+			} elseif ( !$user ) {
+				$errors[] = $lang->steam_nolink;
+			} elseif ( !$settings["steamlink_allowlogin"] ) {
+				$errors[] = $lang->steam_logindisallowed;
+			} else {
 				my_setcookie( "loginattempts", 1 );
 				my_setcookie( "sid", $mybb->session->sid, -1, true );
 				$db->delete_query( "sessions", "ip = ".$db->escape_binary($mybb->session->packedip)." AND sid != '".$mybb->session->sid."'" );
@@ -382,33 +431,11 @@ function steamlink_login() {
 				redirect( "index.php", $lang->steamlink_loggedin );
 			}
 		} elseif ( $validate === false ) {
-			$errors[] = $lang->steamlink_openidfail;
+			$errors[] = $lang->steam_authfail;
 		} else {
 			$openid->identity = "http://steamcommunity.com/openid";
-			redirect( $openid->authUrl(), $lang->steamlink_openidredirect );
+			redirect( $openid->authUrl(), $lang->steam_redirect );
 		}
-	}
-}
-
-$plugins->add_hook( "datahandler_user_validate", "steamlink_user_validate" );
-function steamlink_user_validate( &$dh ) {
-	global $db, $mybb, $settings, $lang, $templates, $theme;
-	if ( THIS_SCRIPT === "member.php" ) {
-		$steamid = $db->fetch_field( $db->simple_select("sessions", "steamid", "sid = '".$mybb->session->sid."'"), "steamid" );
-		if ( $steamid ) {
-			$dh->data["steamid"] = $steamid;
-		} elseif ( $settings["steamlink_regforcelink"] ) {
-			$dh->set_error( $lang->steamlink_linkrequired );
-		}
-	}
-}
-
-$plugins->add_hook( "datahandler_user_insert", "steamlink_user_insert" );
-function steamlink_user_insert( &$dh ) {
-	global $db, $mybb, $settings, $lang, $templates, $theme;
-	if ( $dh->data["steamid"] ) {
-		$dh->user_insert_data["steamid"] = $dh->data["steamid"];
-		$db->update_query( "sessions", array("steamid" => NULL), "sid = '".$mybb->session->sid."'" );
 	}
 }
 
