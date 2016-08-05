@@ -365,7 +365,6 @@ function steamlink_register() {
 				$errors[] = $lang->sprintf( $lang->steam_regexists, build_profile_link(format_name($user["username"], $user["usergroup"], $user["displaygroup"]), $user["uid"]) );
 			} else {
 				$db->update_query( "sessions", array("steamid" => $steamid), "sid='".$mybb->session->sid."'" );
-				redirect( "member.php?action=register", $lang->steam_regauthed );
 			}
 		} elseif ( $validate === false ) {
 			$errors[] = $lang->steam_authfail;
@@ -373,9 +372,13 @@ function steamlink_register() {
 			$openid->identity = "http://steamcommunity.com/openid";
 			redirect( $openid->authUrl(), $lang->steam_redirect );
 		}
-		unset( $steamid );
+	} else {
+		$steamid = $db->fetch_field( $db->simple_select("sessions", "steamid", "sid = '".$mybb->session->sid."'"), "steamid" );
+		if ( !$steamid and $settings["steamlink_regforcelink"] ) {
+			header( "Location: member.php?action=register&steam=1" );
+			exit;
+		}
 	}
-	$steamid = $db->fetch_field( $db->simple_select("sessions", "steamid", "sid = '".$mybb->session->sid."'"), "steamid" );
 	if ( $steamid ) {
 		$steamid32 = steam_convert64to32( $steamid );
 	}
@@ -424,9 +427,9 @@ function steamlink_login() {
 					redirect( "index.php", $lang->steam_authed );
 				}
 			} elseif ( !$user ) {
-				$errors[] = $lang->steam_nolink;
+				$errors[] = $lang->steam_notlinked;
 			} elseif ( !$settings["steamlink_allowlogin"] ) {
-				$errors[] = $lang->steam_logindisallowed;
+				$errors[] = $lang->steam_nologin;
 			} else {
 				my_setcookie( "loginattempts", 1 );
 				my_setcookie( "sid", $mybb->session->sid, -1, true );
