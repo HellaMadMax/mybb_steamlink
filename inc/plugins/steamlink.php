@@ -22,7 +22,7 @@ function steamlink_info() {
 		"description"	=> $lang->steamlink_description,
 		"website"		=> "https://gitlab.com/HellaMadMax/mybb_steamlink",
 		"author"		=> "HellaMadMax",
-		"version"		=> "0.2.0",
+		"version"		=> "0.2.1",
 		"compatibility" => "18*"
 	);
 }
@@ -161,9 +161,10 @@ function steamlink_activate() {
 }';
 	$db->insert_query( "themestylesheets", array(
 		"name" => "steamlink.css",
-		"cachefile" => "steamlink.css",
-		"stylesheet" => $db->escape_string( $stylesheet ),
 		"tid" => 1,
+		"attachedto" => "",
+		"stylesheet" => $db->escape_string( $stylesheet ),
+		"cachefile" => "steamlink.css",
 		"lastmodified" => TIME_NOW
 	) );
 	require_once MYBB_ADMIN_DIR."inc/functions_themes.php";
