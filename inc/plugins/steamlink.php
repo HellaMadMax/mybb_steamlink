@@ -14,6 +14,10 @@ function steam_convert64to32( $steamid_64 ) {
 	return implode( ":", $id );
 }
 
+function steam_convert64toMini( $steamid_64 ) {
+	return floor( bcsub($steamid_64, "76561197960265728") );
+}
+
 function steamlink_info() {
 	global $db, $mybb, $settings, $lang, $templates, $theme;
 	$lang->load( "steamlink" );
@@ -22,7 +26,7 @@ function steamlink_info() {
 		"description"	=> $lang->steamlink_description,
 		"website"		=> "https://gitlab.com/HellaMadMax/mybb_steamlink",
 		"author"		=> "HellaMadMax",
-		"version"		=> "0.3.0",
+		"version"		=> "0.3.1",
 		"compatibility" => "18*"
 	);
 }
@@ -58,7 +62,7 @@ function steamlink_activate() {
 	require_once MYBB_ROOT."inc/adminfunctions_templates.php";
 	$templates = [
 "headerlogin" =>
-'<input type="image" class="steamlink_image" src="https://steamcommunity-a.akamaihd.net/public/images/signinthroughsteam/sits_small.png" name="steam" value="1">',
+'<input type="submit" class="button steamlink_login" name="steam" value="1">',
 
 "register_linked" =>
 '<tr><td colspan="2">
@@ -73,9 +77,7 @@ function steamlink_activate() {
 	<span class="smalltext"><label for="username">{$lang->steam_account}</label></span>
 </td></tr>
 <tr><td colspan="2">
-	<a href="{$mybb->settings[\'bburl\']}/member.php?action=register&steam=1">
-		<img class="steamlink_image" src="https://steamcommunity-a.akamaihd.net/public/images/signinthroughsteam/sits_small.png">
-	</a>
+	<a href="{$mybb->settings[\'bburl\']}/member.php?action=register&steam=1" class="steamlink_login"></a>
 </td></tr>',
 
 "linkrequired" =>
@@ -95,7 +97,7 @@ function steamlink_activate() {
 	<input type="hidden" name="steamlink" value="1">
 	{$getparms}
 	<div style="text-align: center;">
-		<input type="image" class="steamlink_image" src="https://steamcommunity-a.akamaihd.net/public/images/signinthroughsteam/sits_small.png">
+		<input type="submit" class="button steamlink_login" name="steam" value="1">
 	</div>
 </form>
 {$footer}
@@ -129,9 +131,10 @@ function steamlink_activate() {
 			<strong>{$lang->profile_link}</strong>
 		</td>
 		<td class="trow1">
-			<div class="steamlink_badge">
-				<a href="https://steamcommunity.com/profiles/{$memprofile[\'steamid\']}" target="_blank"><img src="http://steamsignature.com/status/english/{$memprofile[\'steamid\']}.png"></a>
-			</div>
+			<a href="https://steamcommunity.com/profiles/{$memprofile[\'steamid\']}" target="_blank" class="steamlink_badge">
+				<div></div>
+				<iframe src="https://steamcommunity.com/miniprofile/{$steamidMini}?client=1" scrolling="no"></iframe>
+			</a>
 		</td>
 	</tr>
 </table><br/>',
@@ -151,9 +154,10 @@ function steamlink_activate() {
 </table><br/>',
 
 "postbit" =>
-'<div class="steamlink_badge">
-	<a href="https://steamcommunity.com/profiles/{$post[\'steamid\']}" target="_blank"><img src="http://steamsignature.com/status/english/{$post[\'steamid\']}.png"></a>
-</div>'
+'<a href="https://steamcommunity.com/profiles/{$post[\'steamid\']}" target="_blank" class="steamlink_badge">
+	<div></div>
+	<iframe src="https://steamcommunity.com/miniprofile/{$steamidMini}?client=1" scrolling="no"></iframe>
+</a>'
 	];	
 	foreach ( $templates as $title => $template ) {
 		$db->insert_query( "templates", array(
@@ -164,27 +168,55 @@ function steamlink_activate() {
 	}
 
 	$stylesheet =
-'.steamlink_image {
-	vertical-align: middle;
-	position: relative;
-	bottom: 1px;
+'.steamlink_login {
+    background: transparent url(https://steamcommunity-a.akamaihd.net/public/images/signinthroughsteam/sits_small.png) no-repeat 1px !important;
+    color: transparent !important;
+    font-weight: bold;
+    width: 156px;
+    border: 0px !important;
+    height: 23px;
 }
 
 .steamlink_badge {
+    position: relative;
+    display: block;
+	width: 224px;
+	height: 66px;
 	border-radius: 4px;
-} .steamlink_badge img {
-	max-height: 66px;
+	overflow: hidden;
+    max-width: 100%;
+	transition: max-width 200ms,height 200ms;
+} .steamlink_badge:hover {
+	height: 154px;
+} .steamlink_badge > div {
+	position: absolute;
+    height: 100%;
+    width: 100%;
+    z-index: 1;
+} .steamlink_badge > iframe {
+	border: 0px;
+    z-index: 2;
+    transform: scale(0.75);
+    transform-origin: 0 0;
+	height: 206px;
 }
 
 .post:not( .classic ) .steamlink_badge {
 	float: left;
+    height: 76px;
+    width: 256px;
+} .post:not( .classic ) .steamlink_badge > iframe {
+    transform: scale(0.86);
+} .post:not( .classic ) .steamlink_badge:hover {
+    height: 176px;
+}
+
+.post.classic .post_author {
+	overflow: visible;
 } .post.classic .steamlink_badge {
 	margin-top: 4px;
-	overflow: hidden;
-} .post.classic .steamlink_badge img {
-	max-width: none;
-	max-height: none;
-	height: 44px;
+} .post.classic .steamlink_badge:hover {
+	max-width: 224px;
 }';
 	$db->insert_query( "themestylesheets", array(
 		"name" => "steamlink.css",
@@ -401,8 +433,9 @@ function steamlink_register() {
 			exit;
 		}
 	}
-	if ( $steamid ) {
+	if ( isset($steamid) ) {
 		$steamid32 = steam_convert64to32( $steamid );
+		$steamidMini = steam_convert64toMini( $steamid );
 	}
 	eval( "\$steamlink_register = \"".$templates->get("steamlink_register_".($steamid32 ? "linked" : "unlinked"))."\";" );
 	if ( $errors ) {
@@ -579,6 +612,7 @@ function steamlink_user_profile() {
 
 	if ( isset($memprofile["steamid"]) ) {
 		$steamid32 = steam_convert64to32( $memprofile["steamid"] );
+		$steamidMini = steam_convert64toMini( $memprofile["steamid"] );
 	}
 	$lang->users_steam_info = $lang->sprintf( $lang->users_steam_info, $memprofile["username"] );
 	eval( "\$steamlink_profileblock = \"".$templates->get("steamlink_profileblock_".($steamid32 ? "linked" : "unlinked"))."\";" );
@@ -590,7 +624,12 @@ $plugins->add_hook( "postbit_pm", "steamlink_postbit" );
 $plugins->add_hook( "postbit_announcement", "steamlink_postbit" );
 function steamlink_postbit( &$post ) {
 	global $db, $mybb, $settings, $lang, $templates, $theme;
-	if ( $post["steamid"] and $settings["steamlink_postbitinfo"] ) {
+	if ( !$settings["steamlink_postbitinfo"] ) {
+		return;
+	}
+	if ( isset($post["steamid"]) ) {
+		$steamid32 = steam_convert64to32( $post["steamid"] );
+		$steamidMini = steam_convert64toMini( $post["steamid"] );
 		eval("\$post['steamlink'] = \"".$templates->get("steamlink_postbit")."\";");
 	}
 }
